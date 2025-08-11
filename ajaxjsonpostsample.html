@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AJAX JSON POST サンプル</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", sans-serif; margin: 24px; }
+    .row { margin-bottom: 16px; }
+    label { display:block; font-weight:600; margin-bottom:6px; }
+    input[type="text"], textarea { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #ccc; border-radius: 8px; }
+    textarea { height: 180px; resize: vertical; }
+    button { padding: 10px 16px; border: 0; border-radius: 999px; cursor: pointer; font-weight: 700; }
+    .primary { background: #2563eb; color: white; }
+    .secondary { background: #e5e7eb; }
+    .stack { display:flex; gap:12px; align-items:center; flex-wrap: wrap; }
+    .muted { color:#6b7280; font-size: 12px; }
+    .panel { border:1px solid #e5e7eb; border-radius: 12px; padding: 12px; background:#fafafa; }
+    pre { white-space: pre-wrap; word-break: break-word; }
+    .status { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  </style>
+</head>
+<body>
+  <h1>AJAXでJSONをPOST（確認メッセージ付き）</h1>
+
+  <div class="row">
+    <label for="url">送信先URL</label>
+    <input id="url" type="text" value="https://xxx.sample.jp/api" placeholder="https://xxx.sample.jp/api" />
+    <div class="muted">ボタン押下時、このURLにPOSTします。</div>
+  </div>
+
+  <div class="row">
+    <label for="data">送信するJSON（data）</label>
+    <textarea id="data" placeholder='{"message":"hello"}'>{
+  "message": "hello",
+  "time": "2025-08-11T00:00:00+09:00"
+}</textarea>
+    <div class="muted">ここに入力した内容を、そのままリクエストボディとして送信します（application/json）。</div>
+  </div>
+
+  <div class="row stack">
+    <button id="send" class="primary">送信</button>
+    <button id="clear" class="secondary" type="button">結果クリア</button>
+    <span id="hint" class="muted"></span>
+  </div>
+
+  <div class="row">
+    <div class="panel">
+      <div class="row">
+        <strong>リクエスト</strong>
+        <pre id="reqPreview" class="status"></pre>
+      </div>
+      <div class="row">
+        <strong>レスポンス</strong>
+        <div class="muted">ステータス・ヘッダ・ボディを表示します。</div>
+        <div class="row"><span id="status" class="status"></span></div>
+        <details>
+          <summary>レスポンスヘッダ</summary>
+          <pre id="headers"></pre>
+        </details>
+        <details open>
+          <summary>レスポンスボディ</summary>
+          <pre id="body"></pre>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (sel) => document.querySelector(sel);
+    const urlEl = $('#url');
+    const dataEl = $('#data');
+    const sendBtn = $('#send');
+    const clearBtn = $('#clear');
+    const hintEl = $('#hint');
+    const reqPreviewEl = $('#reqPreview');
+    const statusEl = $('#status');
+    const headersEl = $('#headers');
+    const bodyEl = $('#body');
+
+    function pretty(objOrText) {
+      try {
+        const obj = typeof objOrText === 'string' ? JSON.parse(objOrText) : objOrText;
+        return JSON.stringify(obj, null, 2);
+      } catch { return String(objOrText); }
+    }
+
+    async function postJson() {
+      const url = urlEl.value.trim();
+      const raw = dataEl.value.trim();
+
+      if (!url) { alert('URLを入力してください'); return; }
+      if (!raw) { alert('送信するJSONを入力してください'); return; }
+
+      // 入力JSONの妥当性チェック（送信は文字列のまま行う）
+      try { JSON.parse(raw); }
+      catch (e) { alert('data に有効なJSONを入力してください\n例: {"key":"value"}\n\n詳細: ' + e.message); return; }
+
+      const confirmMsg = `以下の内容で送信します。\n\nURL: ${url}\n\nBody (先頭500文字):\n${raw.slice(0,500)}${raw.length>500?'\n...（省略）':''}`;
+      if (!confirm(confirmMsg)) return;
+
+      // プレビュー
+      reqPreviewEl.textContent = `POST ${url}\nContent-Type: application/json\n\n${pretty(raw)}`;
+
+      sendBtn.disabled = true;
+      sendBtn.textContent = '送信中...';
+      hintEl.textContent = '※ CORS 設定によりブラウザからのリクエストがブロックされる場合があります。';
+      statusEl.textContent = '';
+      headersEl.textContent = '';
+      bodyEl.textContent = '';
+
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, text/plain, */*'
+          },
+          body: raw,
+          // mode: 'cors' // 既定: cors（同一オリジン外はCORS適用）
+        });
+
+        statusEl.textContent = `HTTP ${res.status} ${res.statusText}`;
+
+        const headerLines = [];
+        res.headers.forEach((v, k) => headerLines.push(`${k}: ${v}`));
+        headersEl.textContent = headerLines.join('\n');
+
+        const text = await res.text();
+        // パースできれば整形表示
+        bodyEl.textContent = pretty(text);
+      } catch (err) {
+        statusEl.textContent = '送信エラー';
+        bodyEl.textContent = String(err);
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.textContent = '送信';
+      }
+    }
+
+    function clearResult() {
+      reqPreviewEl.textContent = '';
+      statusEl.textContent = '';
+      headersEl.textContent = '';
+      bodyEl.textContent = '';
+      hintEl.textContent = '';
+    }
+
+    sendBtn.addEventListener('click', postJson);
+    clearBtn.addEventListener('click', clearResult);
+  </script>
+</body>
+</html>
